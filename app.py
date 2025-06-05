@@ -319,30 +319,61 @@ def fetch_info():
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+                
+                if not info:
+                    raise Exception('No video information returned from YouTube')
+                    
+                print(f"Video info: {info.keys()}")  # Debug log
+                
+                # Extract available formats
+                formats = []
+                if 'formats' not in info or not info['formats']:
+                    raise Exception('No video formats available')
+                    
+                for f in info['formats']:
+                    if not isinstance(f, dict):
+                        print(f"Skipping invalid format: {f}")
+                        continue
+                        
+                    format_note = f.get('format_note', f.get('ext', 'unknown'))
+                    ext = f.get('ext', 'unknown')
+                    format_id = f.get('format_id', '0')
+                    
+                    if not format_note:
+                        format_note = f"{f.get('height', '?')}p" if f.get('height') else ext
+                        
+                    format_str = f"{format_note} - {ext} ({format_id})"
+                    formats.append({
+                        'label': format_str,
+                        'id': format_id
+                    })
+                
+                if not formats:
+                    raise Exception('No valid formats found')
+                
+                response_data = {
+                    'title': info.get('title', 'Untitled'),
+                    'thumbnail': info.get('thumbnail'),
+                    'formats': formats
+                }
+                
+                return jsonify(response_data)
+                
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            print(f"Error in fetch_info: {str(e)}")
+            print(f"Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'Failed to fetch video info: {str(e)}'}), 500
+            
         finally:
-            if cookies_path:
+            # Clean up cookies file if it exists
+            if cookies_path and os.path.exists(cookies_path):
                 try:
                     os.remove(cookies_path)
                     _temp_cookies_files.discard(cookies_path)
-                except Exception:
-                    pass
-        
-        formats = []
-        for f in info['formats']:
-            if f.get('format_note'):
-                format_str = f"{f['format_note']} - {f['ext']} ({f['format_id']})"
-                formats.append({
-                    'label': format_str,
-                    'id': f['format_id']
-                })
-        
-        return jsonify({
-            'title': info['title'],
-            'thumbnail': info.get('thumbnail'),
-            'formats': formats
-        })
+                except Exception as e:
+                    print(f"Error cleaning up cookies file: {e}")
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -390,13 +421,22 @@ def download():
 
         def download_thread():
             try:
+                print(f"Starting download with options: {ydl_opts}")
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
                 # If we get here, download was successful
                 return {'status': 'success'}
+            except yt_dlp.DownloadError as e:
+                error_msg = f"Download failed: {str(e)}"
+                print(error_msg)
+                if hasattr(e, 'exc_info') and e.exc_info[0] == yt_dlp.utils.ExtractorError:
+                    error_msg += f"\nExtractor error: {e.exc_info[1]}"
+                return {'status': 'error', 'message': error_msg}
             except Exception as e:
-                error_msg = str(e)
-                print(f"Download failed: {error_msg}")
+                error_msg = f"Unexpected error during download: {str(e)}"
+                print(error_msg)
+                import traceback
+                traceback.print_exc()
                 return {'status': 'error', 'message': error_msg}
             finally:
                 # Clean up cookies file if it exists
