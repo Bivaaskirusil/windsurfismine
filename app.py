@@ -13,74 +13,92 @@ class ProxyManager:
     def __init__(self):
         self.proxies = []
         self.last_updated = None
-        self.update_interval = timedelta(minutes=30)  # Update proxies every 30 minutes
-        self.test_url = 'https://www.youtube.com/robots.txt'  # Lightweight URL for testing
-        self.timeout = 5  # seconds
+        self.update_interval = timedelta(minutes=30)
+        # Use a very lightweight test URL that's unlikely to change
+        self.test_url = 'https://www.google.com/robots.txt'
+        self.timeout = 3  # Reduce timeout for faster testing
+        self.max_proxies = 5  # Maximum number of proxies to keep in the pool
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            'Accept': 'text/plain',
+            'Connection': 'close'
         })
 
     def is_proxy_working(self, proxy):
-        """Test if a proxy is working"""
-        proxies = {
-            'http': proxy,
-            'https': proxy
-        }
+        """Test if a proxy is working with a quick request"""
+        proxies = {'http': proxy, 'https': proxy}
         try:
-            response = self.session.get(
+            # Use a quick HEAD request instead of GET to save bandwidth
+            response = self.session.head(
                 self.test_url,
                 proxies=proxies,
                 timeout=self.timeout,
-                verify=False
+                verify=False,
+                allow_redirects=True
             )
-            return response.status_code == 200
-        except:
+            # Accept any 2xx status code
+            return 200 <= response.status_code < 300
+        except Exception as e:
+            print(f"Proxy {proxy} failed: {str(e)[:100]}")
             return False
 
     def fetch_proxies(self):
-        """Fetch proxies from multiple sources"""
+        """Fetch proxies from multiple reliable sources"""
         proxy_sources = [
+            self._fetch_static_proxies,  # Start with static proxies first
             self._fetch_geonode_proxies,
-            self._fetch_proxyscrape_proxies,
-            self._fetch_proxylist_proxies
+            self._fetch_proxyscrape_proxies
         ]
         
         all_proxies = set()
         
-        # Fetch proxies from all sources in parallel
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Fetch from sources with a short timeout
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             future_to_source = {executor.submit(source): source for source in proxy_sources}
-            for future in concurrent.futures.as_completed(future_to_source):
+            for future in concurrent.futures.as_completed(future_to_source, timeout=10):
                 try:
-                    proxies = future.result()
+                    proxies = future.result() or []
                     all_proxies.update(proxies)
+                    if len(all_proxies) >= 20:  # Don't collect too many
+                        break
                 except Exception as e:
-                    print(f"Error fetching proxies: {e}")
+                    print(f"Warning: {future_to_source[future].__name__} failed: {str(e)[:100]}")
         
-        return list(all_proxies)
+        return list(all_proxies)[:50]  # Return max 50 proxies
 
+    def _fetch_static_proxies(self):
+        """Return a list of reliable static proxies"""
+        return [
+            'http://51.79.50.31:9300',
+            'http://45.77.56.114:3128',
+            'http://185.199.229.156:7492',
+            'http://45.61.139.48:9999',
+            'http://45.61.139.48:9999'
+        ]
+        
     def _fetch_geonode_proxies(self):
         """Fetch proxies from Geonode API"""
         try:
-            url = 'https://proxylist.geonode.com/api/proxy-list?limit=50&page=1&sort_by=lastChecked&sort_type=desc&speed=fast&protocols=http%2Chttps'
-            response = requests.get(url, timeout=10)
+            url = 'https://proxylist.geonode.com/api/proxy-list?limit=20&page=1&sort_by=lastChecked&sort_type=desc&speed=fast&protocols=http%2Chttps'
+            response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                return [f"http://{p['ip']}:{p['port']}" for p in data.get('data', [])]
+                return [f"http://{p['ip']}:{p['port']}" for p in data.get('data', [])[:10]]  # Return only first 10
         except Exception as e:
-            print(f"Error fetching from Geonode: {e}")
+            print(f"Geonode API error: {str(e)[:100]}")
         return []
 
     def _fetch_proxyscrape_proxies(self):
         """Fetch proxies from ProxyScrape"""
         try:
-            url = 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=US,UK,CA&ssl=yes&anonymity=elite'
-            response = requests.get(url, timeout=10)
+            url = 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=US,UK,CA&ssl=yes&anonymity=elite'
+            response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                return [f"http://{line.strip()}" for line in response.text.split('\n') if line.strip()]
+                proxies = [f"http://line.strip()" for line in response.text.split('\n') if line.strip()]
+                return proxies[:10]  # Return only first 10
         except Exception as e:
-            print(f"Error fetching from ProxyScrape: {e}")
+            print(f"ProxyScrape error: {str(e)[:100]}")
         return []
 
     def _fetch_proxylist_proxies(self):
@@ -95,37 +113,56 @@ class ProxyManager:
         return []
 
     def update_proxies(self):
-        """Update the proxy list"""
-        if self.last_updated and (datetime.now() - self.last_updated) < self.update_interval:
-            return
+        """Update the proxy list with better error handling"""
+        try:
+            if self.last_updated and (datetime.now() - self.last_updated) < self.update_interval:
+                return
+                
+            print("Updating proxy list...")
+            new_proxies = self.fetch_proxies()
             
-        print("Updating proxy list...")
-        new_proxies = self.fetch_proxies()
-        
-        # Test all new proxies in parallel
-        working_proxies = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-            future_to_proxy = {executor.submit(self.is_proxy_working, proxy): proxy for proxy in new_proxies}
-            for future in concurrent.futures.as_completed(future_to_proxy):
-                proxy = future_to_proxy[future]
-                try:
-                    if future.result():
-                        working_proxies.append(proxy)
-                except Exception as e:
-                    print(f"Error testing proxy {proxy}: {e}")
-        
-        self.proxies = working_proxies
+            if not new_proxies:
+                print("No proxies found from sources, using fallbacks")
+                self._use_fallback_proxies()
+                return
+            
+            # Test proxies with a timeout
+            working_proxies = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_proxy = {executor.submit(self.is_proxy_working, proxy): proxy 
+                                 for proxy in new_proxies}
+                
+                for future in concurrent.futures.as_completed(future_to_proxy, timeout=15):
+                    proxy = future_to_proxy[future]
+                    try:
+                        if future.result():
+                            working_proxies.append(proxy)
+                            if len(working_proxies) >= self.max_proxies:
+                                break  # We have enough working proxies
+                    except Exception as e:
+                        print(f"Error testing proxy: {e}")
+            
+            if working_proxies:
+                self.proxies = working_proxies
+                self.last_updated = datetime.now()
+                print(f"Found {len(self.proxies)} working proxies.")
+            else:
+                print("No working proxies found, using fallbacks")
+                self._use_fallback_proxies()
+                
+        except Exception as e:
+            print(f"Error updating proxies: {e}")
+            self._use_fallback_proxies()
+    
+    def _use_fallback_proxies(self):
+        """Use fallback proxies when no others are available"""
+        self.proxies = [
+            'http://51.79.50.31:9300',
+            'http://45.77.56.114:3128',
+            'http://185.199.229.156:7492'
+        ]
         self.last_updated = datetime.now()
-        print(f"Updated proxy list. Found {len(self.proxies)} working proxies.")
-        
-        # If no working proxies were found, use some fallbacks
-        if not self.proxies:
-            self.proxies = [
-                'http://51.79.50.31:9300',
-                'http://45.77.56.114:3128',
-                'http://185.199.229.156:7492'
-            ]
-            print("Using fallback proxies")
+        print("Using fallback proxies")
 
     def get_random_proxy(self):
         """Get a random working proxy"""
@@ -140,26 +177,26 @@ def get_random_proxy():
     return proxy_manager.get_random_proxy()
 
 def get_ytdlp_options(proxy=None):
-    """Get yt-dlp options with proxy settings and verbose logging"""
+    """Get optimized yt-dlp options with proxy settings"""
     options = {
-        'quiet': False,  # Set to False to see yt-dlp output
-        'no_warnings': False,  # Show warnings
-        'extract_flat': True,  # Crucial for fetching info without full download
-        'socket_timeout': 30,
+        'quiet': True,  # Reduce console output
+        'no_warnings': False,  # Show important warnings
+        'extract_flat': True,  # Get basic info without downloading
+        'socket_timeout': 15,  # Reduce timeout
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'DNT': '1',
-            'Connection': 'keep-alive',
+            'Connection': 'close',  # Use close instead of keep-alive
         },
-        'nocheckcertificate': True,  # Skip SSL certificate verification
-        'ignoreerrors': False,  # Set to False to see all errors
-        'forceip': 4,  # Force IPv4, can help in some environments
-        'verbose': True,  # Enable verbose logging
-        'extractor_retries': 3,  # Retry on extraction errors
-        'fragment_retries': 10,  # Retry on fragment errors
-        'retries': 10,  # General retries
+        'nocheckcertificate': True,
+        'ignoreerrors': True,  # Ignore errors to prevent crashes
+        'forceip': 4,  # Force IPv4
+        'retries': 3,  # Reduce retries
+        'fragment_retries': 3,  # Reduce fragment retries
+        'extractor_retries': 2,  # Reduce extractor retries
+        'skip_unavailable_fragments': True,
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web'],
@@ -167,7 +204,10 @@ def get_ytdlp_options(proxy=None):
                 'skip': ['dash', 'hls']
             }
         },
-        'compat_opts': ['no-youtube-unavailable-video']
+        'compat_opts': ['no-youtube-unavailable-video'],
+        'noprogress': True,  # Disable progress bar
+        'concurrent_fragment_downloads': 3,  # Limit concurrent downloads
+        'http_chunk_size': 1048576,  # 1MB chunks
     }
 
     if proxy:
