@@ -15,12 +15,22 @@ PROXY_SERVERS = [
 ]
 
 def fetch_working_proxies():
-    """Fetch working proxies from a free proxy provider"""
+    """Fetch working proxies from Proxifly's free proxy list"""
     try:
-        response = requests.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=US,UK&ssl=yes&anonymity=elite')
+        # Try to get US proxies first (most likely to work with YouTube)
+        response = requests.get('https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/US/data.txt', timeout=10)
         if response.status_code == 200:
-            proxies = [f'http://{proxy.strip()}' for proxy in response.text.split('\r\n') if proxy.strip()]
-            return proxies
+            proxies = [f'http://{proxy.strip()}' for proxy in response.text.split('\n') if proxy.strip()]
+            if proxies:
+                return proxies
+        
+        # If US proxies fail, try global HTTP proxies
+        response = requests.get('https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/http/data.txt', timeout=10)
+        if response.status_code == 200:
+            proxies = [f'http://{proxy.strip()}' for proxy in response.text.split('\n') if proxy.strip()]
+            if proxies:
+                return proxies
+                
     except Exception as e:
         print(f"Error fetching proxies: {e}")
     
@@ -28,7 +38,9 @@ def fetch_working_proxies():
     return [
         'http://51.79.50.31:9300',
         'http://45.77.56.114:3128',
-        'http://45.77.56.114:3128'
+        'http://185.199.229.156:7492',
+        'http://185.199.228.220:7300',
+        'http://185.199.229.156:7492'
     ]
 
 def get_random_proxy():
@@ -46,20 +58,53 @@ def get_ytdlp_options(proxy=None):
         'nocheckcertificate': True,
         'source_address': '0.0.0.0',
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-        }
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+        },
+        'extractor_args': {
+            'youtube': {
+                'skip': ['dash', 'hls'],
+                'player_client': ['android', 'web']
+            }
+        },
+        'nocheckcertificate': True,
+        'ignoreerrors': True,
+        'no_color': True,
+        'forceip': 4  # Force IPv4
     }
     
     if proxy:
-        options['proxy'] = proxy
-        # Parse the proxy URL to get the host and port
-        parsed = urlparse(proxy)
-        proxy_host = parsed.hostname
-        proxy_port = parsed.port or (443 if parsed.scheme == 'https' else 80)
-        options['source_address'] = f'{proxy_host}:{proxy_port}'
+        try:
+            parsed = urlparse(proxy)
+            if not parsed.scheme:
+                proxy = f'http://{proxy}'
+                parsed = urlparse(proxy)
+                
+            options['proxy'] = proxy
+            
+            # Set source address if host and port are available
+            if parsed.hostname and parsed.port:
+                options['source_address'] = f'{parsed.hostname}:{parsed.port}'
+            
+            # Add proxy headers
+            options['http_headers'].update({
+                'X-Forwarded-For': parsed.hostname,
+                'X-Forwarded-Host': parsed.hostname,
+                'X-Forwarded-Proto': parsed.scheme or 'http'
+            })
+            
+        except Exception as e:
+            print(f"Error setting up proxy {proxy}: {e}")
     
     return options
 
