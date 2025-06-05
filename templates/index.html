@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Video Downloader</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .thumbnail-container {
+            max-width: 200px;
+            margin: 10px 0;
+        }
+        .thumbnail {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">YouTube Video Downloader</h1>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="urlInput" class="form-label">YouTube URL:</label>
+                            <input type="text" class="form-control" id="urlInput" placeholder="Enter YouTube URL">
+                        </div>
+                        <button class="btn btn-primary" onclick="fetchVideoInfo()">Fetch Info</button>
+                    </div>
+                </div>
+
+                <div class="card mt-4" id="infoCard" style="display: none;">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4 thumbnail-container">
+                                <img id="thumbnail" class="thumbnail" src="" alt="Video Thumbnail">
+                            </div>
+                            <div class="col-md-8">
+                                <h5 id="title"></h5>
+                                <div class="mt-3">
+                                    <label for="formatSelect" class="form-label">Select Format:</label>
+                                    <select class="form-select" id="formatSelect"></select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-success" onclick="downloadVideo()">Download</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <div class="progress" style="display: none;">
+                            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <p id="status" class="mt-2"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchVideoInfo() {
+            const url = document.getElementById('urlInput').value;
+            if (!url) {
+                alert('Please enter a YouTube URL');
+                return;
+            }
+
+            try {
+                const response = await fetch('/fetch_info', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Update UI with video info
+                document.getElementById('infoCard').style.display = 'block';
+                document.getElementById('title').textContent = data.title;
+                document.getElementById('thumbnail').src = data.thumbnail;
+                
+                // Populate format select
+                const formatSelect = document.getElementById('formatSelect');
+                formatSelect.innerHTML = '';
+                data.formats.forEach(format => {
+                    const option = document.createElement('option');
+                    option.value = format.id;
+                    option.textContent = format.label;
+                    formatSelect.appendChild(option);
+                });
+            } catch (error) {
+                alert('Error fetching video info: ' + error.message);
+            }
+        }
+
+        async function downloadVideo() {
+            const url = document.getElementById('urlInput').value;
+            const formatId = document.getElementById('formatSelect').value;
+            
+            if (!url || !formatId) {
+                alert('Please enter URL and select a format');
+                return;
+            }
+
+            try {
+                // Show progress bar
+                const progressBar = document.querySelector('.progress');
+                const progress = progressBar.querySelector('.progress-bar');
+                progress.style.width = '0%';
+                progressBar.style.display = 'block';
+                
+                const status = document.getElementById('status');
+                status.textContent = 'Downloading...';
+
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url, format_id: formatId })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                status.textContent = 'Download started successfully!';
+                
+                // Update progress bar (in a real application, you would implement progress tracking)
+                let progressValue = 0;
+                const progressInterval = setInterval(() => {
+                    progressValue += 10;
+                    progress.style.width = progressValue + '%';
+                    if (progressValue >= 100) {
+                        clearInterval(progressInterval);
+                        status.textContent = 'Download complete!';
+                    }
+                }, 1000);
+            } catch (error) {
+                alert('Error downloading video: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
