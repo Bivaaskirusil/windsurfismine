@@ -5,7 +5,7 @@ setup(
     version="1.0.0",
     packages=["app"],
     install_requires=[
-        "yt-dlp>=2024.3.10",
+        "yt-dlp==2025.5.22",
         "requests==2.31.0",
         "Pillow==10.1.0",
         "Flask==3.0.0",
