@@ -43,16 +43,29 @@ class ProxyManager:
         """Test if a proxy is working with a quick request"""
         proxies = {'http': proxy, 'https': proxy}
         try:
-            # Use a quick HEAD request instead of GET to save bandwidth
+            # First test with a quick connection
             response = self.session.head(
-                self.test_url,
+                'http://www.google.com/robots.txt',
                 proxies=proxies,
-                timeout=self.timeout,
+                timeout=3,  # Shorter timeout for initial test
                 verify=False,
                 allow_redirects=True
             )
-            # Accept any 2xx status code
+            
+            if not (200 <= response.status_code < 300):
+                return False
+                
+            # If first test passes, do a second test with YouTube
+            response = self.session.head(
+                'https://www.youtube.com/robots.txt',
+                proxies=proxies,
+                timeout=5,  # Slightly longer for YouTube
+                verify=False,
+                allow_redirects=True
+            )
+            
             return 200 <= response.status_code < 300
+            
         except Exception as e:
             print(f"Proxy {proxy} failed: {str(e)[:100]}")
             return False
@@ -84,11 +97,16 @@ class ProxyManager:
     def _fetch_static_proxies(self):
         """Return a list of reliable static proxies"""
         return [
-            'http://51.79.50.31:9300',
-            'http://45.77.56.114:3128',
-            'http://185.199.229.156:7492',
-            'http://45.61.139.48:9999',
-            'http://45.61.139.48:9999'
+            'http://23.227.38.173:80',
+            'http://172.66.47.196:80',
+            'http://172.67.71.115:80',
+            'http://172.67.70.214:80',
+            'http://172.67.3.142:80',
+            'http://172.67.70.69:80',
+            'http://23.227.39.46:80',
+            'http://172.67.182.71:80',
+            'http://172.67.177.61:80',
+            'http://185.162.230.17:80'
         ]
         
     def _fetch_geonode_proxies(self):
@@ -127,46 +145,66 @@ class ProxyManager:
         return []
 
     def update_proxies(self):
-        """Update the proxy list with better error handling"""
+        """Update the proxy list with better error handling and faster validation"""
         try:
             if self.last_updated and (datetime.now() - self.last_updated) < self.update_interval:
-                return
+                return self.proxies
                 
             print("Updating proxy list...")
-            new_proxies = self.fetch_proxies()
             
-            if not new_proxies:
-                print("No proxies found from sources, using fallbacks")
-                self._use_fallback_proxies()
-                return
+            # Always include static proxies first
+            all_proxies = self._fetch_static_proxies()
             
-            # Test proxies with a timeout
+            # Add some dynamic proxies if available
+            try:
+                dynamic_proxies = self.fetch_proxies()
+                all_proxies.extend(dynamic_proxies)
+            except Exception as e:
+                print(f"Warning: Could not fetch dynamic proxies: {e}")
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_proxies = []
+            for proxy in all_proxies:
+                if proxy not in seen:
+                    seen.add(proxy)
+                    unique_proxies.append(proxy)
+            
+            # Test proxies with timeout
             working_proxies = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_proxy = {executor.submit(self.is_proxy_working, proxy): proxy 
-                                 for proxy in new_proxies}
+            test_futures = {}
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                # Submit all proxy tests
+                for proxy in unique_proxies[:50]:  # Limit to first 50 to avoid too many tests
+                    future = executor.submit(self.is_proxy_working, proxy)
+                    test_futures[future] = proxy
                 
-                for future in concurrent.futures.as_completed(future_to_proxy, timeout=15):
-                    proxy = future_to_proxy[future]
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(test_futures, timeout=30):
+                    proxy = test_futures[future]
                     try:
                         if future.result():
                             working_proxies.append(proxy)
-                            if len(working_proxies) >= self.max_proxies:
-                                break  # We have enough working proxies
+                            print(f"Found working proxy: {proxy}")
+                            if len(working_proxies) >= 10:  # We only need a few good ones
+                                break
                     except Exception as e:
-                        print(f"Error testing proxy: {e}")
+                        print(f"Error testing proxy {proxy}: {e}")
             
             if working_proxies:
                 self.proxies = working_proxies
                 self.last_updated = datetime.now()
-                print(f"Found {len(self.proxies)} working proxies.")
+                print(f"Updated proxy list with {len(self.proxies)} working proxies.")
             else:
-                print("No working proxies found, using fallbacks")
+                print("No working proxies found, using fallback list")
                 self._use_fallback_proxies()
                 
         except Exception as e:
-            print(f"Error updating proxies: {e}")
+            print(f"Error in update_proxies: {e}")
             self._use_fallback_proxies()
+            
+        return self.proxies
     
     def _use_fallback_proxies(self):
         """Use fallback proxies when no others are available"""
