@@ -1,4 +1,4 @@
-git+https://github.com/yt-dlp/yt-dlp.git@nightly#egg=yt-dlp
+git+https://github.com/yt-dlp/yt-dlp.git@master#egg=yt-dlp
 requests==2.31.0
 Pillow==10.1.0
 Flask==3.0.0
