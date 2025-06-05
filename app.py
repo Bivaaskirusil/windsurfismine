@@ -236,57 +236,24 @@ def get_random_proxy():
     return proxy_manager.get_random_proxy()
 
 def get_ytdlp_options(proxy=None):
-    """Get optimized yt-dlp options with proxy settings"""
-    options = {
-        'quiet': True,  # Reduce console output
-        'no_warnings': False,  # Show important warnings
-        'extract_flat': True,  # Get basic info without downloading
-        'socket_timeout': 15,  # Reduce timeout
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'DNT': '1',
-            'Connection': 'close',  # Use close instead of keep-alive
-        },
+    """Return yt-dlp options with NO proxy (direct connection only)"""
+    opts = {
+        'quiet': True,
         'nocheckcertificate': True,
-        'ignoreerrors': True,  # Ignore errors to prevent crashes
-        'forceip': 4,  # Force IPv4
-        'retries': 3,  # Reduce retries
-        'fragment_retries': 3,  # Reduce fragment retries
-        'extractor_retries': 2,  # Reduce extractor retries
-        'skip_unavailable_fragments': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web'],
-                'player_skip': ['configs', 'webpage', 'js'],
-                'skip': ['dash', 'hls']
-            }
+        'ignoreerrors': True,
+        'retries': 2,
+        'socket_timeout': 10,
+        'geo_bypass': True,
+        'no_color': True,
+        'concurrent_fragment_downloads': 2,
+        'fragment_retries': 2,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
         },
-        'compat_opts': ['no-youtube-unavailable-video'],
-        'noprogress': True,  # Disable progress bar
-        'concurrent_fragment_downloads': 3,  # Limit concurrent downloads
-        'http_chunk_size': 1048576,  # 1MB chunks
     }
-
-    if proxy:
-        try:
-            # Ensure proxy URL has a scheme
-            if not urlparse(proxy).scheme:
-                proxy_url = f'http://{proxy}' # Default to http if not specified
-            else:
-                proxy_url = proxy
-            options['proxy'] = proxy_url
-            print(f"Using proxy: {proxy_url}")
-        except Exception as e:
-            print(f"Error setting up proxy {proxy}: {e}. Proceeding without proxy.")
-            if 'proxy' in options: del options['proxy']
-    else:
-        # Ensure no stale proxy setting if proxy is None
-        if 'proxy' in options: del options['proxy']
-        print("No proxy configured or proxy setup failed, attempting direct connection.")
-
-    return options
+    # DO NOT set any proxy options
+    return opts
 
 app = Flask(__name__)
 
@@ -306,28 +273,13 @@ def fetch_info():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
 
-        max_retries = 3
-        last_error = None
-        
-        for attempt in range(max_retries):
-            proxy = get_random_proxy()
-            ydl_opts = get_ytdlp_options(proxy)
-            
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    # If we get here, the request was successful
-                    break
-            except Exception as e:
-                last_error = str(e)
-                print(f"Attempt {attempt + 1} failed with proxy {proxy}: {last_error}")
-                if attempt == max_retries - 1:
-                    # Last attempt, try without proxy
-                    print("All proxy attempts failed, trying direct connection")
-                    ydl_opts = get_ytdlp_options(None)
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(url, download=False)
-                        break
+        # Always use direct connection, no proxies
+        ydl_opts = get_ytdlp_options(None)
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
         
         formats = []
         for f in info['formats']:
