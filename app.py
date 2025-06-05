@@ -96,17 +96,24 @@ class ProxyManager:
 
     def _fetch_static_proxies(self):
         """Return a list of reliable static proxies"""
+        # Proxies from https://raw.githubusercontent.com/theriturajps/proxy-list/main/proxies.txt
+        # Fetched on 2025-06-05
         return [
-            'http://23.227.38.173:80',
-            'http://172.66.47.196:80',
-            'http://172.67.71.115:80',
-            'http://172.67.70.214:80',
-            'http://172.67.3.142:80',
-            'http://172.67.70.69:80',
-            'http://23.227.39.46:80',
-            'http://172.67.182.71:80',
-            'http://172.67.177.61:80',
-            'http://185.162.230.17:80'
+            'http://1.0.205.87:8080',
+            'http://1.1.189.58:8080',
+            'http://1.1.220.63:8080',
+            'http://1.10.141.115:8080',
+            'http://1.179.144.41:8080',
+            'http://1.179.148.33:1080',
+            'http://1.179.148.9:55636',
+            'http://1.20.184.75:4153',
+            'http://1.20.200.154:8081',
+            'http://1.20.225.123:8080',
+            'http://1.4.195.114:4145',
+            'http://1.4.214.178:8080',
+            'http://1.85.52.250:9797',
+            'http://1.9.83.210:1337',
+            'http://100.1.53.24:5678'
         ]
         
     def _fetch_geonode_proxies(self):
