@@ -28,6 +28,24 @@
                             <label for="urlInput" class="form-label">YouTube URL:</label>
                             <input type="text" class="form-control" id="urlInput" placeholder="Enter YouTube URL">
                         </div>
+                        
+                        <!-- Cookie Section -->
+                        <div class="mb-3">
+                            <button class="btn btn-sm btn-outline-secondary mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#cookieSection" aria-expanded="false" aria-controls="cookieSection">
+                                + Add YouTube Cookies (for age-restricted/private videos)
+                            </button>
+                            <div class="collapse" id="cookieSection">
+                                <div class="card card-body">
+                                    <p class="small text-muted mb-2">Paste your YouTube cookies here (Netscape format) to access age-restricted or private videos:</p>
+                                    <textarea class="form-control font-monospace small" id="cookiesText" rows="6" style="font-size: 0.8rem;" placeholder="# Netscape HTTP Cookie File
+.youtube.com	TRUE	/	TRUE	1783677164	PREF	tz=Asia.Katmandu&f7=100
+.youtube.com	TRUE	/	FALSE	1783663310	HSID	Amffrd2AqY4X5K6Ks
+..."></textarea>
+                                    <small class="text-muted">Get your cookies by using a browser extension like "EditThisCookie" or "Get cookies.txt".</small>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <button class="btn btn-primary" onclick="fetchVideoInfo()">Fetch Info</button>
                     </div>
                 </div>
@@ -64,6 +82,9 @@
         </div>
     </div>
 
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script>
         async function fetchVideoInfo() {
             const url = document.getElementById('urlInput').value;
@@ -72,13 +93,17 @@
                 return;
             }
 
+            const cookiesText = document.getElementById('cookiesText').value.trim();
+            const formData = new FormData();
+            formData.append('url', url);
+            if (cookiesText) {
+                formData.append('cookies_text', cookiesText);
+            }
+
             try {
                 const response = await fetch('/fetch_info', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ url: url })
+                    body: formData
                 });
 
                 const data = await response.json();
@@ -109,10 +134,18 @@
         async function downloadVideo() {
             const url = document.getElementById('urlInput').value;
             const formatId = document.getElementById('formatSelect').value;
+            const cookiesText = document.getElementById('cookiesText').value.trim();
             
             if (!url || !formatId) {
                 alert('Please enter URL and select a format');
                 return;
+            }
+
+            const formData = new FormData();
+            formData.append('url', url);
+            formData.append('format_id', formatId);
+            if (cookiesText) {
+                formData.append('cookies_text', cookiesText);
             }
 
             try {
@@ -127,10 +160,7 @@
 
                 const response = await fetch('/download', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ url: url, format_id: formatId })
+                    body: formData
                 });
 
                 const data = await response.json();
