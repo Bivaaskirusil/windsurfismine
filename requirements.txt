@@ -1,10 +1,9 @@
-git+https://github.com/yt-dlp/yt-dlp.git@master#egg=yt-dlp
+yt-dlp==2023.11.16  # Pinned to a stable version
 requests==2.31.0
-Pillow==10.1.0
 Flask==3.0.0
-python-dotenv==1.0.0
-waitress==2.1.2
 gunicorn==21.2.0
-python-socks[asyncio]==2.4.1
+python-dotenv==1.0.0
+python-socks[asyncio]==2.4.4
 PySocks==1.7.1
-requests[socks]==2.31.0
+gevent==23.7.0  # For better async support
+psutil==5.9.5  # For better resource management

@@ -6,8 +6,22 @@ import json
 import random
 import requests
 import concurrent.futures
+import psutil
+import signal
+import sys
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Set up signal handler for graceful shutdown
+def signal_handler(sig, frame):
+    print('Shutting down gracefully...')
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 class ProxyManager:
     def __init__(self):
