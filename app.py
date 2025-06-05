@@ -49,20 +49,34 @@ def get_random_proxy():
     return random.choice(proxies) if proxies else None
 
 def get_ytdlp_options(proxy=None):
-    """Get yt-dlp options with proxy settings"""
+    """Get yt-dlp options with proxy settings and verbose logging"""
     options = {
-        'quiet': True,
-        'no_warnings': True,
+        'quiet': False,  # Set to False to see yt-dlp output
+        'no_warnings': False,  # Show warnings
         'extract_flat': True,  # Crucial for fetching info without full download
         'socket_timeout': 30,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'DNT': '1',
+            'Connection': 'keep-alive',
         },
-        'nocheckcertificate': True, # Skip SSL certificate verification
-        'ignoreerrors': True,       # Continue on download errors
-        'forceip': 4,             # Force IPv4, can help in some environments
-        # 'verbose': True, # Uncomment for detailed yt-dlp logs if issues persist
+        'nocheckcertificate': True,  # Skip SSL certificate verification
+        'ignoreerrors': False,  # Set to False to see all errors
+        'forceip': 4,  # Force IPv4, can help in some environments
+        'verbose': True,  # Enable verbose logging
+        'extractor_retries': 3,  # Retry on extraction errors
+        'fragment_retries': 10,  # Retry on fragment errors
+        'retries': 10,  # General retries
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+                'player_skip': ['configs', 'webpage', 'js'],
+                'skip': ['dash', 'hls']
+            }
+        },
+        'compat_opts': ['no-youtube-unavailable-video']
     }
 
     if proxy:
