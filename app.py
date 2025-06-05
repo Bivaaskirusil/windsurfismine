@@ -366,5 +366,10 @@ def progress_hook(d):
         print(f"Progress: {d['downloaded_bytes']}/{d['total_bytes_estimate']}")
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    port = int(os.environ.get('PORT', 10000))
+    print(f"Starting server on port {port}")
+    try:
+        app.run(host='0.0.0.0', port=port, threaded=True)
+    except Exception as e:
+        print(f"Error starting server: {e}")
+        raise
