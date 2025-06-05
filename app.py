@@ -285,7 +285,15 @@ def index():
 @app.route('/fetch_info', methods=['POST'])
 def fetch_info():
     try:
-        url = request.json.get('url')
+        # Handle both JSON and form data
+        if request.is_json:
+            data = request.get_json()
+            url = data.get('url')
+            cookies_text = data.get('cookies_text')
+        else:
+            url = request.form.get('url')
+            cookies_text = request.form.get('cookies_text')
+            
         if not url:
             return jsonify({'error': 'URL is required'}), 400
 
@@ -298,10 +306,10 @@ def fetch_info():
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     f.write(cookies_file.read().decode('utf-8'))
                 _temp_cookies_files.add(cookies_path)
-            elif 'cookies_text' in request.form and request.form['cookies_text'].strip():
+            elif cookies_text and cookies_text.strip():
                 fd, cookies_path = tempfile.mkstemp(prefix='yt_cookies_', suffix='.txt')
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    f.write(request.form['cookies_text'])
+                    f.write(cookies_text.strip())
                 _temp_cookies_files.add(cookies_path)
         except Exception as e:
             return jsonify({'error': f'Failed to process cookies: {str(e)}'}), 400
@@ -341,16 +349,39 @@ def fetch_info():
 @app.route('/download', methods=['POST'])
 def download():
     try:
-        data = request.json
-        url = data.get('url')
-        format_id = data.get('format_id')
-        
+        # Handle both JSON and form data
+        if request.is_json:
+            data = request.get_json()
+            url = data.get('url')
+            format_id = data.get('format_id')
+            cookies_text = data.get('cookies_text')
+        else:
+            url = request.form.get('url')
+            format_id = request.form.get('format_id')
+            cookies_text = request.form.get('cookies_text')
+            
         if not url or not format_id:
             return jsonify({'error': 'URL and format_id are required'}), 400
+            
+        # Handle cookies: file upload or textarea
+        cookies_path = None
+        try:
+            if 'cookies_file' in request.files and request.files['cookies_file']:
+                cookies_file = request.files['cookies_file']
+                fd, cookies_path = tempfile.mkstemp(prefix='yt_cookies_', suffix='.txt')
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(cookies_file.read().decode('utf-8'))
+                _temp_cookies_files.add(cookies_path)
+            elif cookies_text and cookies_text.strip():
+                fd, cookies_path = tempfile.mkstemp(prefix='yt_cookies_', suffix='.txt')
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(cookies_text.strip())
+                _temp_cookies_files.add(cookies_path)
+        except Exception as e:
+            return jsonify({'error': f'Failed to process cookies: {str(e)}'}), 400
 
-        # Try with proxy first, fallback to direct connection
-        proxy = get_random_proxy()
-        ydl_opts = get_ytdlp_options(proxy)
+        # Always use direct connection with cookies if provided
+        ydl_opts = get_ytdlp_options(None, cookies_path)
         ydl_opts.update({
             'format': format_id,
             'outtmpl': os.path.join(OUTPUT_DIR, '%(title)s.%(ext)s'),
@@ -358,38 +389,24 @@ def download():
         })
 
         def download_thread():
-            max_retries = 3
-            last_error = None
-            
-            for attempt in range(max_retries):
-                proxy = get_random_proxy()
-                current_opts = get_ytdlp_options(proxy)
-                current_opts.update({
-                    'format': format_id,
-                    'outtmpl': os.path.join(OUTPUT_DIR, '%(title)s.%(ext)s'),
-                    'progress_hooks': [progress_hook],
-                })
-                
-                try:
-                    with yt_dlp.YoutubeDL(current_opts) as ydl:
-                        ydl.download([url])
-                    # If we get here, download was successful
-                    return
-                except Exception as e:
-                    last_error = str(e)
-                    print(f"Download attempt {attempt + 1} failed with proxy {proxy}: {last_error}")
-                    if attempt == max_retries - 1:
-                        # Last attempt, try without proxy
-                        print("All proxy attempts failed, trying direct connection")
-                        current_opts = get_ytdlp_options(None)
-                        current_opts.update({
-                            'format': format_id,
-                            'outtmpl': os.path.join(OUTPUT_DIR, '%(title)s.%(ext)s'),
-                            'progress_hooks': [progress_hook],
-                        })
-                        with yt_dlp.YoutubeDL(current_opts) as ydl:
-                            ydl.download([url])
-                            return
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+                # If we get here, download was successful
+                return {'status': 'success'}
+            except Exception as e:
+                error_msg = str(e)
+                print(f"Download failed: {error_msg}")
+                return {'status': 'error', 'message': error_msg}
+            finally:
+                # Clean up cookies file if it exists
+                if cookies_path and os.path.exists(cookies_path):
+                    try:
+                        os.remove(cookies_path)
+                        _temp_cookies_files.discard(cookies_path)
+                    except Exception as e:
+                        print(f"Failed to remove cookies file: {e}")
+                return
 
         # Start download in a separate thread
         threading.Thread(target=download_thread).start()
