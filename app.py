@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file, abort
 import yt_dlp
 import os
 import threading
@@ -11,6 +11,20 @@ import signal
 import sys
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
+import tempfile
+import shutil
+import logging
+
+# Helper for cookies file cleanup
+import atexit
+_temp_cookies_files = set()
+def _cleanup_temp_cookies():
+    for f in list(_temp_cookies_files):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+atexit.register(_cleanup_temp_cookies)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -235,8 +249,8 @@ def get_random_proxy():
     """Get a random working proxy using ProxyManager"""
     return proxy_manager.get_random_proxy()
 
-def get_ytdlp_options(proxy=None):
-    """Return yt-dlp options with NO proxy (direct connection only)"""
+def get_ytdlp_options(proxy=None, cookies_path=None):
+    """Return yt-dlp options with NO proxy (direct connection only), and optional cookies file."""
     opts = {
         'quiet': True,
         'nocheckcertificate': True,
@@ -252,8 +266,10 @@ def get_ytdlp_options(proxy=None):
             'Accept-Language': 'en-US,en;q=0.9',
         },
     }
-    # DO NOT set any proxy options
+    if cookies_path:
+        opts['cookies'] = cookies_path
     return opts
+
 
 app = Flask(__name__)
 
@@ -273,13 +289,37 @@ def fetch_info():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
 
-        # Always use direct connection, no proxies
-        ydl_opts = get_ytdlp_options(None)
+        # Handle cookies: file upload or textarea
+        cookies_path = None
+        try:
+            if 'cookies_file' in request.files and request.files['cookies_file']:
+                cookies_file = request.files['cookies_file']
+                fd, cookies_path = tempfile.mkstemp(prefix='yt_cookies_', suffix='.txt')
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(cookies_file.read().decode('utf-8'))
+                _temp_cookies_files.add(cookies_path)
+            elif 'cookies_text' in request.form and request.form['cookies_text'].strip():
+                fd, cookies_path = tempfile.mkstemp(prefix='yt_cookies_', suffix='.txt')
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(request.form['cookies_text'])
+                _temp_cookies_files.add(cookies_path)
+        except Exception as e:
+            return jsonify({'error': f'Failed to process cookies: {str(e)}'}), 400
+
+        # Always use direct connection, no proxies, pass cookies if present
+        ydl_opts = get_ytdlp_options(None, cookies_path)
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+        finally:
+            if cookies_path:
+                try:
+                    os.remove(cookies_path)
+                    _temp_cookies_files.discard(cookies_path)
+                except Exception:
+                    pass
         
         formats = []
         for f in info['formats']:
