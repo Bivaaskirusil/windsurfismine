@@ -53,59 +53,35 @@ def get_ytdlp_options(proxy=None):
     options = {
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': True,
+        'extract_flat': True,  # Crucial for fetching info without full download
         'socket_timeout': 30,
-        'nocheckcertificate': True,
-        'source_address': '0.0.0.0',
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
         },
-        'extractor_args': {
-            'youtube': {
-                'skip': ['dash', 'hls'],
-                'player_client': ['android', 'web']
-            }
-        },
-        'nocheckcertificate': True,
-        'ignoreerrors': True,
-        'no_color': True,
-        'forceip': 4  # Force IPv4
+        'nocheckcertificate': True, # Skip SSL certificate verification
+        'ignoreerrors': True,       # Continue on download errors
+        'forceip': 4,             # Force IPv4, can help in some environments
+        # 'verbose': True, # Uncomment for detailed yt-dlp logs if issues persist
     }
-    
+
     if proxy:
         try:
-            parsed = urlparse(proxy)
-            if not parsed.scheme:
-                proxy = f'http://{proxy}'
-                parsed = urlparse(proxy)
-                
-            options['proxy'] = proxy
-            
-            # Set source address if host and port are available
-            if parsed.hostname and parsed.port:
-                options['source_address'] = f'{parsed.hostname}:{parsed.port}'
-            
-            # Add proxy headers
-            options['http_headers'].update({
-                'X-Forwarded-For': parsed.hostname,
-                'X-Forwarded-Host': parsed.hostname,
-                'X-Forwarded-Proto': parsed.scheme or 'http'
-            })
-            
+            # Ensure proxy URL has a scheme
+            if not urlparse(proxy).scheme:
+                proxy_url = f'http://{proxy}' # Default to http if not specified
+            else:
+                proxy_url = proxy
+            options['proxy'] = proxy_url
+            print(f"Using proxy: {proxy_url}")
         except Exception as e:
-            print(f"Error setting up proxy {proxy}: {e}")
-    
+            print(f"Error setting up proxy {proxy}: {e}. Proceeding without proxy.")
+            if 'proxy' in options: del options['proxy']
+    else:
+        # Ensure no stale proxy setting if proxy is None
+        if 'proxy' in options: del options['proxy']
+        print("No proxy configured or proxy setup failed, attempting direct connection.")
+
     return options
 
 app = Flask(__name__)
